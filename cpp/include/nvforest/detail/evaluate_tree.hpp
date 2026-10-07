@@ -27,12 +27,8 @@ namespace nvforest::detail {
 template <typename io_t, typename index_t>
 HOST DEVICE auto categorical_bitset_index(io_t input_val, index_t num_bits) -> index_t
 {
-  if (input_val < io_t{0}) {
-    return input_val > io_t{-1} ? index_t{0} : num_bits;
-  }
-  if (input_val < static_cast<io_t>(num_bits)) {
-    return static_cast<index_t>(input_val);
-  }
+  if (input_val < io_t{0}) { return input_val > io_t{-1} ? index_t{0} : num_bits; }
+  if (input_val < static_cast<io_t>(num_bits)) { return static_cast<index_t>(input_val); }
   return num_bits;
 }
 
@@ -75,9 +71,8 @@ HOST DEVICE auto evaluate_tree_impl(node_t const* __restrict__ node,
         auto valid_categories = categorical_set_type{
           &cur_node.index(), uint32_t(sizeof(typename node_t::index_type) * 8)};
         condition =
-          !isnan(input_val) &&
-          valid_categories.test(categorical_bitset_index(
-            input_val, uint32_t(sizeof(typename node_t::index_type) * 8)));
+          !isnan(input_val) && valid_categories.test(categorical_bitset_index(
+                                 input_val, uint32_t(sizeof(typename node_t::index_type) * 8)));
       } else {
         condition = (input_val < cur_node.threshold());
       }
@@ -143,8 +138,8 @@ HOST DEVICE auto evaluate_tree_impl(node_t const* __restrict__ node,
         auto valid_categories =
           categorical_set_type{categorical_storage + cur_node.index() + 1,
                                uint32_t(categorical_storage[cur_node.index()])};
-        condition = valid_categories.test(categorical_bitset_index(
-          input_val, uint32_t(categorical_storage[cur_node.index()])));
+        condition = valid_categories.test(
+          categorical_bitset_index(input_val, uint32_t(categorical_storage[cur_node.index()])));
       } else {
         condition = (input_val < cur_node.threshold());
       }
