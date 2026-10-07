@@ -13,6 +13,24 @@
 #include <nvforest/detail/gpu_support.hpp>
 namespace nvforest::detail {
 
+/**
+ * Convert a floating-point feature value to a categorical bitset index.
+ *
+ * Truncates toward zero, matching LightGBM's int-cast categorical lookup.
+ * A direct float-to-unsigned conversion is undefined behavior for negative
+ * values and differs between x86 (wraps out of range) and CUDA (clamps to
+ * 0), so the conversion must be explicit. Values outside [-1, num_bits)
+ * return num_bits, which bitset::test reports as false.
+ */
+template <typename io_t, typename index_t>
+HOST DEVICE auto categorical_bitset_index(io_t input_val, index_t num_bits) -> index_t
+{
+  if (input_val >= io_t{-1} && input_val < static_cast<io_t>(num_bits)) {
+    return static_cast<index_t>(input_val);
+  }
+  return num_bits;
+}
+
 /*
  * Evaluate a single tree on a single row.
  * If node_id_mapping is not-nullptr, this kernel outputs leaf node's ID
@@ -51,7 +69,10 @@ HOST DEVICE auto evaluate_tree_impl(node_t const* __restrict__ node,
       if (cur_node.is_categorical()) {
         auto valid_categories = categorical_set_type{
           &cur_node.index(), uint32_t(sizeof(typename node_t::index_type) * 8)};
-        condition = valid_categories.test(input_val) && !isnan(input_val);
+        condition =
+          !isnan(input_val) &&
+          valid_categories.test(categorical_bitset_index(
+            input_val, uint32_t(sizeof(typename node_t::index_type) * 8)));
       } else {
         condition = (input_val < cur_node.threshold());
       }
@@ -117,7 +138,8 @@ HOST DEVICE auto evaluate_tree_impl(node_t const* __restrict__ node,
         auto valid_categories =
           categorical_set_type{categorical_storage + cur_node.index() + 1,
                                uint32_t(categorical_storage[cur_node.index()])};
-        condition = valid_categories.test(input_val);
+        condition = valid_categories.test(categorical_bitset_index(
+          input_val, uint32_t(categorical_storage[cur_node.index()])));
       } else {
         condition = (input_val < cur_node.threshold());
       }
