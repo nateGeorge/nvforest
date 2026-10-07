@@ -16,16 +16,21 @@ namespace nvforest::detail {
 /**
  * Convert a floating-point feature value to a categorical bitset index.
  *
- * Truncates toward zero, matching LightGBM's int-cast categorical lookup.
- * A direct float-to-unsigned conversion is undefined behavior for negative
- * values and differs between x86 (wraps out of range) and CUDA (clamps to
- * 0), so the conversion must be explicit. Values outside [-1, num_bits)
- * return num_bits, which bitset::test reports as false.
+ * Truncates toward zero, matching LightGBM's int-cast categorical lookup:
+ * values in (-1, 0) map to 0, and any other negative value is out of range,
+ * as is anything at or beyond num_bits. A direct float-to-unsigned
+ * conversion is undefined behavior for negative values and differs between
+ * x86 (wraps out of range) and CUDA (clamps to 0), so the conversion must
+ * be explicit. Out-of-range results return num_bits, which bitset::test
+ * reports as false.
  */
 template <typename io_t, typename index_t>
 HOST DEVICE auto categorical_bitset_index(io_t input_val, index_t num_bits) -> index_t
 {
-  if (input_val >= io_t{-1} && input_val < static_cast<io_t>(num_bits)) {
+  if (input_val < io_t{0}) {
+    return input_val > io_t{-1} ? index_t{0} : num_bits;
+  }
+  if (input_val < static_cast<io_t>(num_bits)) {
     return static_cast<index_t>(input_val);
   }
   return num_bits;
