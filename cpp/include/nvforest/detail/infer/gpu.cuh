@@ -104,8 +104,9 @@ std::enable_if_t<D == device_type::gpu, void> infer(
   auto const max_shared_mem_per_sm    = get_max_shared_mem_per_sm(device);
   auto const max_overall_shared_mem   = std::min(max_shared_mem_per_block, max_shared_mem_per_sm);
 
-  auto row_size_bytes  = index_type(index_type(sizeof(typename forest_t::io_type) * col_count));
-  auto row_output_size = output_count;
+  auto row_size_bytes = index_type(
+    index_type(sizeof(typename forest_t::io_type) * (col_count + index_type(col_count % 2 == 0))));
+  auto row_output_size       = output_count;
   auto row_output_size_bytes = index_type(sizeof(typename forest_t::io_type) * row_output_size);
 
   // First determine the number of threads per block. This is the indicated
