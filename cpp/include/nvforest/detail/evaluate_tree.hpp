@@ -58,7 +58,8 @@ HOST DEVICE auto evaluate_tree_impl(node_t const* __restrict__ node,
     } else {
       condition = (input_val < cur_node.threshold());
     }
-    if (!condition && cur_node.default_distant()) { condition = isnan(input_val); }
+    // Bitwise ops keep the missing-value fallback branch-free.
+    condition = condition | (cur_node.default_distant() & isnan(input_val));
     node += cur_node.child_offset(condition);
     cur_node = *node;
   } while (!cur_node.is_leaf());
@@ -110,17 +111,19 @@ HOST DEVICE auto evaluate_tree_impl(node_t const* __restrict__ node,
   using categorical_set_type = bitset<uint32_t, categorical_storage_t const>;
   auto cur_node              = *node;
   do {
-    auto input_val = row[cur_node.feature_index()];
-    auto condition = cur_node.default_distant();
-    if (!isnan(input_val)) {
-      if (cur_node.is_categorical()) {
+    auto input_val    = row[cur_node.feature_index()];
+    auto const is_nan = isnan(input_val);
+    auto condition    = true;
+    if (cur_node.is_categorical()) {
+      condition = cur_node.default_distant();
+      if (!is_nan) {
         auto valid_categories =
           categorical_set_type{categorical_storage + cur_node.index() + 1,
                                uint32_t(categorical_storage[cur_node.index()])};
         condition = valid_categories.test(input_val);
-      } else {
-        condition = (input_val < cur_node.threshold());
       }
+    } else {
+      condition = (input_val < cur_node.threshold()) | (cur_node.default_distant() & is_nan);
     }
     node += cur_node.child_offset(condition);
     cur_node = *node;
