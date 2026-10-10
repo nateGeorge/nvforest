@@ -22,18 +22,27 @@ namespace nvforest::detail {
  * conversion is undefined behavior for negative values and differs between
  * x86 (wraps out of range) and CUDA (clamps to 0), so the conversion must
  * be explicit. Out-of-range results return num_bits, which bitset::test
- * reports as false.
+ * reports as false. NaN must be handled by the caller.
  */
 template <typename io_t, typename index_t>
 HOST DEVICE auto categorical_bitset_index(io_t input_val, index_t num_bits) -> index_t
 {
-  if (input_val < io_t{0}) {
-    return input_val > io_t{-1} ? index_t{0} : num_bits;
+#ifdef __CUDA_ARCH__
+  // The rz intrinsics saturate on overflow, so one integer compare replaces
+  // floating-point range checks (slow at FP64 on many GPUs).
+  auto truncated = 0ll;
+  if constexpr (std::is_same_v<io_t, float>) {
+    truncated = __float2ll_rz(input_val);
+  } else {
+    truncated = __double2ll_rz(input_val);
   }
-  if (input_val < static_cast<io_t>(num_bits)) {
-    return static_cast<index_t>(input_val);
-  }
-  return num_bits;
+  auto const index = static_cast<unsigned long long>(truncated);
+  return index < num_bits ? static_cast<index_t>(index) : num_bits;
+#else
+  return (input_val > io_t{-1} && input_val < static_cast<io_t>(num_bits))
+           ? static_cast<index_t>(input_val)
+           : num_bits;
+#endif
 }
 
 /*
