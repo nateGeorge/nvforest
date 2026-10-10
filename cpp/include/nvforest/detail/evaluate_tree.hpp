@@ -21,23 +21,21 @@ namespace nvforest::detail {
  * as is anything at or beyond num_bits. A direct float-to-unsigned
  * conversion is undefined behavior for negative values and differs between
  * x86 (wraps out of range) and CUDA (clamps to 0), so the conversion must
- * be explicit. Out-of-range results return num_bits, which bitset::test
- * reports as false. NaN must be handled by the caller.
+ * be explicit. Out-of-range values return an index >= num_bits, which
+ * bitset::test reports as false. NaN must be handled by the caller.
  */
 template <typename io_t, typename index_t>
 HOST DEVICE auto categorical_bitset_index(io_t input_val, index_t num_bits) -> index_t
 {
 #ifdef __CUDA_ARCH__
-  // The rz intrinsics saturate on overflow, so one integer compare replaces
-  // floating-point range checks (slow at FP64 on many GPUs).
-  auto truncated = 0ll;
+  // Saturating 32-bit truncation; negatives wrap to >= num_bits, so the
+  // bound check in bitset::test is the only range check (no FP compares).
+  static_cast<void>(num_bits);
   if constexpr (std::is_same_v<io_t, float>) {
-    truncated = __float2ll_rz(input_val);
+    return static_cast<index_t>(__float2int_rz(input_val));
   } else {
-    truncated = __double2ll_rz(input_val);
+    return static_cast<index_t>(__double2int_rz(input_val));
   }
-  auto const index = static_cast<unsigned long long>(truncated);
-  return index < num_bits ? static_cast<index_t>(index) : num_bits;
 #else
   return (input_val > io_t{-1} && input_val < static_cast<io_t>(num_bits))
            ? static_cast<index_t>(input_val)
@@ -84,9 +82,8 @@ HOST DEVICE auto evaluate_tree_impl(node_t const* __restrict__ node,
         auto valid_categories = categorical_set_type{
           &cur_node.index(), uint32_t(sizeof(typename node_t::index_type) * 8)};
         condition =
-          !isnan(input_val) &&
-          valid_categories.test(categorical_bitset_index(
-            input_val, uint32_t(sizeof(typename node_t::index_type) * 8)));
+          !isnan(input_val) && valid_categories.test(categorical_bitset_index(
+                                 input_val, uint32_t(sizeof(typename node_t::index_type) * 8)));
       } else {
         condition = (input_val < cur_node.threshold());
       }
@@ -152,8 +149,8 @@ HOST DEVICE auto evaluate_tree_impl(node_t const* __restrict__ node,
         auto valid_categories =
           categorical_set_type{categorical_storage + cur_node.index() + 1,
                                uint32_t(categorical_storage[cur_node.index()])};
-        condition = valid_categories.test(categorical_bitset_index(
-          input_val, uint32_t(categorical_storage[cur_node.index()])));
+        condition = valid_categories.test(
+          categorical_bitset_index(input_val, uint32_t(categorical_storage[cur_node.index()])));
       } else {
         condition = (input_val < cur_node.threshold());
       }
