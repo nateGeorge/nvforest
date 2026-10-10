@@ -21,15 +21,26 @@ namespace nvforest::detail {
  * as is anything at or beyond num_bits. A direct float-to-unsigned
  * conversion is undefined behavior for negative values and differs between
  * x86 (wraps out of range) and CUDA (clamps to 0), so the conversion must
- * be explicit. Out-of-range results return num_bits, which bitset::test
- * reports as false.
+ * be explicit. Out-of-range values return an index >= num_bits, which
+ * bitset::test reports as false. NaN must be handled by the caller.
  */
 template <typename io_t, typename index_t>
 HOST DEVICE auto categorical_bitset_index(io_t input_val, index_t num_bits) -> index_t
 {
-  if (input_val < io_t{0}) { return input_val > io_t{-1} ? index_t{0} : num_bits; }
-  if (input_val < static_cast<io_t>(num_bits)) { return static_cast<index_t>(input_val); }
-  return num_bits;
+#ifdef __CUDA_ARCH__
+  // Saturating 32-bit truncation; negatives wrap to >= num_bits, so the
+  // bound check in bitset::test is the only range check (no FP compares).
+  static_cast<void>(num_bits);
+  if constexpr (std::is_same_v<io_t, float>) {
+    return static_cast<index_t>(__float2int_rz(input_val));
+  } else {
+    return static_cast<index_t>(__double2int_rz(input_val));
+  }
+#else
+  return (input_val > io_t{-1} && input_val < static_cast<io_t>(num_bits))
+           ? static_cast<index_t>(input_val)
+           : num_bits;
+#endif
 }
 
 /*
