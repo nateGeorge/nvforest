@@ -226,96 +226,45 @@ std::enable_if_t<D == device_type::gpu, void> infer(
     }
   }
 
+  auto launch = [&](auto chunk, auto kind) {
+    infer_kernel<has_categorical_nodes, decltype(chunk)::value, decltype(kind)::value>
+      <<<num_blocks, threads_per_block, shared_mem_per_block, stream>>>(forest,
+                                                                        postproc,
+                                                                        output,
+                                                                        input,
+                                                                        row_count,
+                                                                        col_count,
+                                                                        output_count,
+                                                                        shared_mem_per_block,
+                                                                        output_workspace_size,
+                                                                        vector_output,
+                                                                        categorical_data,
+                                                                        global_workspace.data());
+  };
+  // A compile-time infer kind removes per-task branches and frees registers.
+  auto launch_kind = [&](auto chunk) {
+    switch (infer_type) {
+      case infer_kind::per_tree:
+        launch(chunk, std::integral_constant<infer_kind, infer_kind::per_tree>{});
+        break;
+      case infer_kind::leaf_id:
+        launch(chunk, std::integral_constant<infer_kind, infer_kind::leaf_id>{});
+        break;
+      default: launch(chunk, std::integral_constant<infer_kind, infer_kind::default_kind>{});
+    }
+  };
   if (rows_per_block_iteration <= 1) {
-    infer_kernel<has_categorical_nodes, 1>
-      <<<num_blocks, threads_per_block, shared_mem_per_block, stream>>>(forest,
-                                                                        postproc,
-                                                                        output,
-                                                                        input,
-                                                                        row_count,
-                                                                        col_count,
-                                                                        output_count,
-                                                                        shared_mem_per_block,
-                                                                        output_workspace_size,
-                                                                        vector_output,
-                                                                        categorical_data,
-                                                                        infer_type,
-                                                                        global_workspace.data());
+    launch_kind(std::integral_constant<index_type, 1>{});
   } else if (rows_per_block_iteration <= 2) {
-    infer_kernel<has_categorical_nodes, 2>
-      <<<num_blocks, threads_per_block, shared_mem_per_block, stream>>>(forest,
-                                                                        postproc,
-                                                                        output,
-                                                                        input,
-                                                                        row_count,
-                                                                        col_count,
-                                                                        output_count,
-                                                                        shared_mem_per_block,
-                                                                        output_workspace_size,
-                                                                        vector_output,
-                                                                        categorical_data,
-                                                                        infer_type,
-                                                                        global_workspace.data());
+    launch_kind(std::integral_constant<index_type, 2>{});
   } else if (rows_per_block_iteration <= 4) {
-    infer_kernel<has_categorical_nodes, 4>
-      <<<num_blocks, threads_per_block, shared_mem_per_block, stream>>>(forest,
-                                                                        postproc,
-                                                                        output,
-                                                                        input,
-                                                                        row_count,
-                                                                        col_count,
-                                                                        output_count,
-                                                                        shared_mem_per_block,
-                                                                        output_workspace_size,
-                                                                        vector_output,
-                                                                        categorical_data,
-                                                                        infer_type,
-                                                                        global_workspace.data());
+    launch_kind(std::integral_constant<index_type, 4>{});
   } else if (rows_per_block_iteration <= 8) {
-    infer_kernel<has_categorical_nodes, 8>
-      <<<num_blocks, threads_per_block, shared_mem_per_block, stream>>>(forest,
-                                                                        postproc,
-                                                                        output,
-                                                                        input,
-                                                                        row_count,
-                                                                        col_count,
-                                                                        output_count,
-                                                                        shared_mem_per_block,
-                                                                        output_workspace_size,
-                                                                        vector_output,
-                                                                        categorical_data,
-                                                                        infer_type,
-                                                                        global_workspace.data());
+    launch_kind(std::integral_constant<index_type, 8>{});
   } else if (rows_per_block_iteration <= 16) {
-    infer_kernel<has_categorical_nodes, 16>
-      <<<num_blocks, threads_per_block, shared_mem_per_block, stream>>>(forest,
-                                                                        postproc,
-                                                                        output,
-                                                                        input,
-                                                                        row_count,
-                                                                        col_count,
-                                                                        output_count,
-                                                                        shared_mem_per_block,
-                                                                        output_workspace_size,
-                                                                        vector_output,
-                                                                        categorical_data,
-                                                                        infer_type,
-                                                                        global_workspace.data());
+    launch_kind(std::integral_constant<index_type, 16>{});
   } else {
-    infer_kernel<has_categorical_nodes, 32>
-      <<<num_blocks, threads_per_block, shared_mem_per_block, stream>>>(forest,
-                                                                        postproc,
-                                                                        output,
-                                                                        input,
-                                                                        row_count,
-                                                                        col_count,
-                                                                        output_count,
-                                                                        shared_mem_per_block,
-                                                                        output_workspace_size,
-                                                                        vector_output,
-                                                                        categorical_data,
-                                                                        infer_type,
-                                                                        global_workspace.data());
+    launch_kind(std::integral_constant<index_type, 32>{});
   }
   cuda_check(cudaGetLastError());
 }

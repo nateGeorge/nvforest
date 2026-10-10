@@ -64,6 +64,7 @@ namespace nvforest::detail {
  */
 template <bool has_categorical_nodes,
           index_type chunk_size,
+          infer_kind infer_type,
           typename forest_t,
           typename vector_output_t    = std::nullptr_t,
           typename categorical_data_t = std::nullptr_t>
@@ -77,9 +78,8 @@ NVFOREST_KERNEL void __launch_bounds__(MAX_THREADS_PER_BLOCK, MIN_BLOCKS_PER_SM)
   index_type num_outputs,
   index_type shared_mem_byte_size,
   index_type output_workspace_size,
-  vector_output_t vector_output_p     = nullptr,
-  categorical_data_t categorical_data = nullptr,
-  infer_kind infer_type               = infer_kind::default_kind,
+  vector_output_t vector_output_p                                                  = nullptr,
+  categorical_data_t categorical_data                                              = nullptr,
   typename forest_t::template raw_output_type<vector_output_t>* workspace_fallback = nullptr)
 {
   auto const default_num_outputs         = forest.num_outputs();
