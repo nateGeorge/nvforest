@@ -105,7 +105,11 @@ NVFOREST_KERNEL void __launch_bounds__(MAX_THREADS_PER_BLOCK, MIN_BLOCKS_PER_SM)
     // process
     auto rows_in_this_iteration = min(chunk_size, row_count - i);
 
-    auto* input_data = shared_mem.copy(input + i * col_count, rows_in_this_iteration, col_count);
+    // Odd row stride spreads a warp's same-feature reads across banks.
+    auto const row_pad = index_type(col_count % 2 == 0);
+    auto* input_data =
+      shared_mem.copy(input + i * col_count, rows_in_this_iteration, col_count, row_pad);
+    auto const row_stride = (input_data == input + i * col_count) ? col_count : col_count + row_pad;
 
     auto task_count = chunk_size * forest.tree_count();
 
@@ -139,11 +143,11 @@ NVFOREST_KERNEL void __launch_bounds__(MAX_THREADS_PER_BLOCK, MIN_BLOCKS_PER_SM)
       if (infer_type == infer_kind::leaf_id) {
         leaf_node_id =
           evaluate_tree<has_vector_leaves, has_categorical_nodes, has_nonlocal_categories, true>(
-            forest, tree_index, input_data + row_index * col_count, categorical_data);
+            forest, tree_index, input_data + row_index * row_stride, categorical_data);
       } else {
         tree_output =
           evaluate_tree<has_vector_leaves, has_categorical_nodes, has_nonlocal_categories, false>(
-            forest, tree_index, input_data + row_index * col_count, categorical_data);
+            forest, tree_index, input_data + row_index * row_stride, categorical_data);
       }
 
       if (infer_type == infer_kind::leaf_id) {
